@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Squeeze — Image Optimizer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg: #0f1214;
+    --panel: #161a1d;
+    --panel-2: #1d2226;
+    --line: #2a3034;
+    --text: #e8ecee;
+    --text-dim: #8b959b;
+    --accent: #7fd858;
+    --accent-dim: #4f7a3d;
+    --warn: #e8b84b;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, "Inter", "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    padding:32px 20px 80px;
+  }
+  .wrap{max-width:920px;margin:0 auto;}
+
+  header{margin-bottom:28px;}
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin-bottom:8px;
+  }
+  h1{
+    font-size:28px;
+    margin:0 0 6px;
+    font-weight:650;
+    letter-spacing:-0.01em;
+  }
+  header p{margin:0;color:var(--text-dim);font-size:14px;line-height:1.5;max-width:56ch;}
+
+  .controls{
+    display:flex;
+    gap:24px;
+    flex-wrap:wrap;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px 22px;
+    margin-bottom:20px;
+  }
+  .field{display:flex;flex-direction:column;gap:8px;min-width:180px;}
+  .field label{
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--text-dim);
+    display:flex;
+    justify-content:space-between;
+  }
+  .field label span.val{color:var(--accent);}
+  input[type=number]{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:6px;
+    padding:8px 10px;
+    font-family:var(--mono);
+    font-size:14px;
+    width:110px;
+  }
+  input[type=range]{
+    width:180px;
+    accent-color:var(--accent);
+  }
+  select{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:6px;
+    padding:8px 10px;
+    font-family:var(--mono);
+    font-size:13px;
+  }
+  .field-note{font-size:11px;color:var(--text-dim);font-family:var(--mono);}
+
+  .dropzone{
+    border:1.5px dashed var(--line);
+    border-radius:10px;
+    padding:40px 20px;
+    text-align:center;
+    color:var(--text-dim);
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+    margin-bottom:24px;
+  }
+  .dropzone.drag{
+    border-color:var(--accent);
+    background:rgba(127,216,88,0.06);
+    color:var(--text);
+  }
+  .dropzone strong{color:var(--text);font-weight:600;}
+  .dropzone .hint{font-family:var(--mono);font-size:12px;margin-top:6px;color:var(--text-dim);}
+  #fileInput{display:none;}
+
+  .toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:12px;
+    min-height:32px;
+  }
+  .toolbar .count{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+  .toolbar .actions{display:flex;gap:10px;}
+
+  button{
+    font-family:var(--sans);
+    font-size:13px;
+    font-weight:600;
+    border-radius:7px;
+    padding:9px 16px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--text);
+    cursor:pointer;
+    transition:background .12s, border-color .12s;
+  }
+  button:hover{border-color:#3a4147;}
+  button.primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#0f1a08;
+  }
+  button.primary:hover{background:#8fe066;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.ghost{background:transparent;}
+
+  .list{display:flex;flex-direction:column;gap:10px;}
+  .row{
+    display:grid;
+    grid-template-columns:52px 1fr auto auto;
+    align-items:center;
+    gap:16px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:12px 14px;
+  }
+  .thumb{
+    width:52px;height:52px;border-radius:6px;object-fit:cover;
+    background:var(--panel-2);border:1px solid var(--line);
+  }
+  .meta .name{font-size:13.5px;font-weight:600;margin-bottom:4px;word-break:break-all;}
+  .meta .sizes{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+  .meta .sizes .saved{color:var(--accent);}
+  .meta .sizes .pending{color:var(--warn);}
+  .bar{
+    width:110px;height:5px;border-radius:3px;background:var(--panel-2);
+    overflow:hidden;border:1px solid var(--line);
+  }
+  .bar .fill{height:100%;background:var(--accent);width:0%;transition:width .3s;}
+  .row .dl{white-space:nowrap;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
+
+  .badge{
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    padding:2px 7px;
+    border-radius:4px;
+    border:1px solid var(--line);
+    color:var(--text-dim);
+    white-space:nowrap;
+  }
+  .badge.advanced{color:var(--accent);border-color:var(--accent-dim);}
+  .badge.standard{color:var(--warn);border-color:#5a4a26;}
+
+  .controls-2{
+    display:flex;
+    gap:24px;
+    flex-wrap:wrap;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 22px;
+    margin-bottom:20px;
+  }
+  .controls-2 .field{min-width:170px;}
+  .checkfield{display:flex;align-items:center;gap:8px;}
+  .checkfield input[type=checkbox]{
+    width:15px;height:15px;accent-color:var(--accent);
+  }
+  .checkfield label{
+    font-family:var(--mono);font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--text-dim);cursor:pointer;
+  }
+  .status-line{
+    font-family:var(--mono);font-size:11px;color:var(--text-dim);
+    margin:-8px 0 18px;min-height:14px;
+  }
+  .status-line.warn{color:var(--warn);}
+
+  footer{
+    margin-top:32px;
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+  }
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Images never leave this tab</div>
+    <h1>Squeeze</h1>
+    <p>Drop in images, set a max width and quality, get back optimised files. Processing happens locally in this browser tab. On first use it fetches better compression engines (mozjpeg / webp / oxipng) from a CDN — needs internet once, then falls back to a built-in encoder automatically if that's ever unavailable.</p>
+  </header>
+
+  <div class="controls">
+    <div class="field">
+      <label>Max width <span class="val" id="widthVal">2000px</span></label>
+      <input type="range" id="maxWidth" min="200" max="4000" step="10" value="2000">
+      <div class="field-note">Images narrower than this are left untouched</div>
+    </div>
+    <div class="field">
+      <label>Quality <span class="val" id="qualVal">75%</span></label>
+      <input type="range" id="quality" min="1" max="100" step="1" value="75">
+      <div class="field-note">Applies to JPEG / WebP output</div>
+    </div>
+    <div class="field">
+      <label>Output format</label>
+      <select id="format">
+        <option value="auto">Keep original type</option>
+        <option value="image/jpeg">Force JPEG</option>
+        <option value="image/webp">Force WebP</option>
+        <option value="image/png">Force PNG</option>
+      </select>
+      <div class="field-note">PNG ignores quality (lossless)</div>
+    </div>
+  </div>
+
+  <div class="controls-2">
+    <div class="field checkfield">
+      <input type="checkbox" id="progressive" checked>
+      <label for="progressive">Progressive JPEG</label>
+    </div>
+    <div class="field">
+      <label>Chroma subsampling</label>
+      <select id="chroma">
+        <option value="auto">Auto (recommended)</option>
+        <option value="420">4:2:0 — smaller files</option>
+        <option value="444">4:4:4 — highest fidelity</option>
+      </select>
+      <div class="field-note">JPEG / WebP only</div>
+    </div>
+    <div class="field checkfield">
+      <input type="checkbox" id="deepPng">
+      <label for="deepPng">Deep PNG optimisation</label>
+    </div>
+    <div class="field">
+      <label>PNG effort</label>
+      <select id="pngLevel">
+        <option value="2">Fast</option>
+        <option value="4" selected>Balanced</option>
+        <option value="6">Max (slow)</option>
+      </select>
+      <div class="field-note">Only when deep optimisation is on</div>
+    </div>
+  </div>
+  <div class="status-line" id="statusLine"></div>
+
+  <div class="dropzone" id="dropzone">
+    <div><strong>Drop images here</strong> or click to choose files</div>
+    <div class="hint">JPEG · PNG · WebP · GIF (first frame) — any number of files</div>
+    <input type="file" id="fileInput" multiple accept="image/*">
+  </div>
+
+  <div class="toolbar">
+    <div class="count" id="count"></div>
+    <div class="actions">
+      <button class="ghost" id="clearBtn" disabled>Clear all</button>
+      <button class="primary" id="processBtn" disabled>Optimise all</button>
+      <button id="zipBtn" disabled>Download all (.zip)</button>
+    </div>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <footer>Nothing leaves your browser tab. Reprocessing re-reads the original file, so you can change settings and run again.</footer>
+</div>
+
+<script>
+const state = { items: [] }; // {id, file, origUrl, origSize, outBlob, outSize, outName, w, h, status, engine}
+let idCounter = 0;
+
+// --- Advanced encoder loading (mozjpeg / webp / oxipng via WASM) ---
+// Each loader is memoised and independently allowed to fail; failure just
+// means that format silently falls back to the native canvas encoder.
+const encoderCache = {};
+async function loadEncoder(key, url){
+  if(encoderCache[key] !== undefined) return encoderCache[key];
+  try {
+    const mod = await import(/* webpackIgnore: true */ url);
+    encoderCache[key] = mod.default;
+    return mod.default;
+  } catch(err){
+    console.warn(`Advanced encoder unavailable (${key}):`, err.message);
+    encoderCache[key] = null;
+    return null;
+  }
+}
+const getJpegEncoder = () => loadEncoder('jpeg', 'https://esm.sh/@jsquash/jpeg/encode');
+const getWebpEncoder = () => loadEncoder('webp', 'https://esm.sh/@jsquash/webp/encode');
+const getOxipng = () => loadEncoder('oxipng', 'https://esm.sh/@jsquash/oxipng/optimise');
+
+async function encodeJpegAdvanced(imageData, quality, progressive, chroma){
+  const encode = await getJpegEncoder();
+  if(!encode) return null;
+  const options = {
+    quality,
+    baseline: false,
+    progressive,
+    optimize_coding: true,
+    smoothing: 0,
+    color_space: 3,
+    quant_table: 3,
+    auto_subsample: chroma === 'auto',
+    chroma_subsample: chroma === '444' ? 1 : 2,
+    separate_chroma_quality: false,
+    chroma_quality: quality,
+  };
+  const buffer = await encode(imageData, options);
+  return new Blob([buffer], { type: 'image/jpeg' });
+}
+
+async function encodeWebpAdvanced(imageData, quality){
+  const encode = await getWebpEncoder();
+  if(!encode) return null;
+  const buffer = await encode(imageData, { quality });
+  return new Blob([buffer], { type: 'image/webp' });
+}
+
+async function optimisePngAdvanced(pngBlob, level){
+  const optimise = await getOxipng();
+  if(!optimise) return null;
+  const inputBuffer = new Uint8Array(await pngBlob.arrayBuffer());
+  const outBuffer = await optimise(inputBuffer, { level });
+  const blob = new Blob([outBuffer], { type: 'image/png' });
+  return blob.size < pngBlob.size ? blob : pngBlob;
+}
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const list = document.getElementById('list');
+const countEl = document.getElementById('count');
+const processBtn = document.getElementById('processBtn');
+const zipBtn = document.getElementById('zipBtn');
+const clearBtn = document.getElementById('clearBtn');
+const maxWidthInput = document.getElementById('maxWidth');
+const qualityInput = document.getElementById('quality');
+const widthVal = document.getElementById('widthVal');
+const qualVal = document.getElementById('qualVal');
+const formatSelect = document.getElementById('format');
+
+maxWidthInput.addEventListener('input', () => widthVal.textContent = maxWidthInput.value + 'px');
+qualityInput.addEventListener('input', () => qualVal.textContent = qualityInput.value + '%');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList){
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  files.forEach(file => {
+    const id = idCounter++;
+    const origUrl = URL.createObjectURL(file);
+    state.items.push({
+      id, file, origUrl, origSize: file.size,
+      outBlob: null, outSize: 0, outName: file.name, status: 'pending'
+    });
+  });
+  render();
+}
+
+function fmtBytes(b){
+  if(b < 1024) return b + ' B';
+  if(b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+
+function render(){
+  list.innerHTML = '';
+  state.items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = item.origUrl;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = item.outName;
+    const sizes = document.createElement('div');
+    sizes.className = 'sizes';
+    if(item.status === 'done'){
+      const pct = Math.round((1 - item.outSize/item.origSize) * 100);
+      sizes.innerHTML = `${fmtBytes(item.origSize)} → ${fmtBytes(item.outSize)} <span class="saved">(${pct >= 0 ? '-' : '+'}${Math.abs(pct)}%)</span>`;
+    } else if(item.status === 'error'){
+      sizes.innerHTML = `<span class="pending">Could not process this file</span>`;
+    } else {
+      sizes.innerHTML = `${fmtBytes(item.origSize)} <span class="pending">· pending</span>`;
+    }
+    meta.appendChild(name);
+    meta.appendChild(sizes);
+
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('div');
+    fill.className = 'fill';
+    fill.style.width = item.status === 'done' ? '100%' : (item.status === 'processing' ? '50%' : '0%');
+    bar.appendChild(fill);
+
+    const dlWrap = document.createElement('div');
+    dlWrap.className = 'dl';
+    if(item.status === 'done'){
+      const dlBtn = document.createElement('button');
+      dlBtn.textContent = 'Download';
+      dlBtn.onclick = () => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(item.outBlob);
+        a.download = item.outName;
+        a.click();
+      };
+      dlWrap.appendChild(dlBtn);
+      if(item.engine){
+        const badge = document.createElement('div');
+        badge.className = 'badge ' + (item.engine === 'advanced' ? 'advanced' : 'standard');
+        badge.textContent = item.engine === 'advanced' ? 'Advanced' : 'Standard';
+        dlWrap.appendChild(badge);
+      }
+    } else {
+      const spacer = document.createElement('button');
+      spacer.textContent = item.status === 'processing' ? '…' : '—';
+      spacer.disabled = true;
+      dlWrap.appendChild(spacer);
+    }
+
+    row.appendChild(img);
+    row.appendChild(meta);
+    row.appendChild(bar);
+    row.appendChild(dlWrap);
+    list.appendChild(row);
+  });
+
+  countEl.textContent = state.items.length ? `${state.items.length} image${state.items.length>1?'s':''}` : '';
+  processBtn.disabled = state.items.length === 0;
+  clearBtn.disabled = state.items.length === 0;
+  zipBtn.disabled = !state.items.some(i => i.status === 'done');
+}
+
+function extForType(type){
+  if(type === 'image/jpeg') return 'jpg';
+  if(type === 'image/webp') return 'webp';
+  if(type === 'image/png') return 'png';
+  return 'jpg';
+}
+
+function baseName(name){
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
+async function processItem(item){
+  item.status = 'processing';
+  render();
+
+  try {
+    const bitmap = await createImageBitmap(item.file);
+    const maxWidth = parseInt(maxWidthInput.value, 10);
+    const qualityPct = parseInt(qualityInput.value, 10);
+    const quality01 = qualityPct / 100;
+    const progressive = document.getElementById('progressive').checked;
+    const chroma = document.getElementById('chroma').value;
+    const deepPng = document.getElementById('deepPng').checked;
+    const pngLevel = parseInt(document.getElementById('pngLevel').value, 10);
+
+    let targetFormat = formatSelect.value;
+    if(targetFormat === 'auto'){
+      targetFormat = (item.file.type === 'image/png' || item.file.type === 'image/webp' || item.file.type === 'image/gif')
+        ? item.file.type : 'image/jpeg';
+      if(targetFormat === 'image/gif') targetFormat = 'image/png';
+    }
+
+    let { width, height } = bitmap;
+    if(width > maxWidth){
+      height = Math.round(height * (maxWidth / width));
+      width = maxWidth;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if(targetFormat === 'image/jpeg'){
+      // flatten transparency onto white for JPEG
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    let blob = null;
+    let engine = 'standard';
+
+    if(targetFormat === 'image/jpeg'){
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const advanced = await encodeJpegAdvanced(imageData, qualityPct, progressive, chroma).catch(() => null);
+      if(advanced){ blob = advanced; engine = 'advanced'; }
+    } else if(targetFormat === 'image/webp'){
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const advanced = await encodeWebpAdvanced(imageData, qualityPct).catch(() => null);
+      if(advanced){ blob = advanced; engine = 'advanced'; }
+    }
+
+    if(!blob){
+      // native canvas fallback for jpeg/webp, or default path for png
+      blob = await new Promise(res => canvas.toBlob(res, targetFormat, targetFormat === 'image/png' ? undefined : quality01));
+    }
+
+    if(targetFormat === 'image/png' && deepPng){
+      const optimised = await optimisePngAdvanced(blob, pngLevel).catch(() => null);
+      if(optimised){ blob = optimised; engine = 'advanced'; }
+    }
+
+    item.outBlob = blob;
+    item.outSize = blob.size;
+    const newExt = extForType(targetFormat);
+    const origExt = (item.file.name.split('.').pop() || '').toLowerCase();
+    const extChanged = !(origExt === newExt || (origExt === 'jpeg' && newExt === 'jpg'));
+    item.outName = extChanged ? baseName(item.file.name) + '.' + newExt : item.file.name;
+    item.engine = engine;
+    item.status = 'done';
+  } catch(err){
+    console.error(err);
+    item.status = 'error';
+  }
+  render();
+}
+
+const statusLine = document.getElementById('statusLine');
+
+processBtn.addEventListener('click', async () => {
+  processBtn.disabled = true;
+  statusLine.textContent = 'Optimising… first run may take a few seconds while advanced encoders load.';
+  statusLine.classList.remove('warn');
+  for(const item of state.items){
+    await processItem(item);
+  }
+  processBtn.disabled = false;
+
+  const usedAdvanced = state.items.some(i => i.engine === 'advanced');
+  const usedFallback = state.items.some(i => i.engine === 'standard');
+  if(usedAdvanced && !usedFallback){
+    statusLine.textContent = 'Done — advanced encoders used for every image.';
+  } else if(usedAdvanced && usedFallback){
+    statusLine.textContent = 'Done — advanced encoders used where supported, standard encoder used for the rest.';
+  } else if(usedFallback){
+    statusLine.textContent = 'Done — advanced encoders were unavailable (likely offline), used the built-in encoder instead. Results are still optimised, just without progressive/chroma controls.';
+    statusLine.classList.add('warn');
+  } else {
+    statusLine.textContent = '';
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  state.items.forEach(i => URL.revokeObjectURL(i.origUrl));
+  state.items = [];
+  fileInput.value = '';
+  statusLine.textContent = '';
+  render();
+});
+
+zipBtn.addEventListener('click', async () => {
+  const zip = new JSZip();
+  state.items.filter(i => i.status === 'done').forEach(i => {
+    zip.file(i.outName, i.outBlob);
+  });
+  const content = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = 'optimised-images.zip';
+  a.click();
+});
+
+render();
+</script>
+</body>
+</html>
