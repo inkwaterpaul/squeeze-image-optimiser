@@ -147,17 +147,13 @@
   .list{display:flex;flex-direction:column;gap:10px;}
   .row{
     display:grid;
-    grid-template-columns:52px 1fr auto auto;
+    grid-template-columns:1fr auto auto;
     align-items:center;
     gap:16px;
     background:var(--panel);
     border:1px solid var(--line);
     border-radius:9px;
     padding:12px 14px;
-  }
-  .thumb{
-    width:52px;height:52px;border-radius:6px;object-fit:cover;
-    background:var(--panel-2);border:1px solid var(--line);
   }
   .meta .name{font-size:13.5px;font-weight:600;margin-bottom:4px;word-break:break-all;}
   .meta .sizes{font-family:var(--mono);font-size:12px;color:var(--text-dim);}
@@ -224,7 +220,7 @@
   <header>
     <div class="eyebrow">Images never leave this tab</div>
     <h1>Squeeze</h1>
-    <p>Drop in images, set a max width and quality, get back optimised files. Processing happens locally in this browser tab. On first use it fetches better compression engines (mozjpeg / webp / oxipng) from a CDN — needs internet once, then falls back to a built-in encoder automatically if that's ever unavailable.</p>
+    <p>Drop in images, set a max width and quality, get back optimised files. Processing happens locally in this browser tab. On first use it fetches better compression engines (mozjpeg / webp / oxipng) from a CDN — this needs the page to be served over http(s) (not opened as a local file) and an internet connection once; it falls back to a built-in encoder automatically otherwise.</p>
   </header>
 
   <div class="controls">
@@ -301,15 +297,24 @@
 </div>
 
 <script>
-const state = { items: [] }; // {id, file, origUrl, origSize, outBlob, outSize, outName, w, h, status, engine}
+const state = { items: [] }; // {id, file, origSize, outBlob, outSize, outName, w, h, status, engine}
 let idCounter = 0;
 
 // --- Advanced encoder loading (mozjpeg / webp / oxipng via WASM) ---
 // Each loader is memoised and independently allowed to fail; failure just
 // means that format silently falls back to the native canvas encoder.
 const encoderCache = {};
+const isFileProtocol = location.protocol === 'file:';
 async function loadEncoder(key, url){
   if(encoderCache[key] !== undefined) return encoderCache[key];
+  if(isFileProtocol){
+    // Browsers block cross-origin fetches from file:// pages outright (the
+    // page's origin is "null"), regardless of the CDN's CORS headers, so
+    // there's no point trying — it will only produce a console error.
+    console.info(`Advanced encoder (${key}) skipped: page opened via file://, so it can't reach the CDN. Serve this file over http(s) to enable it.`);
+    encoderCache[key] = null;
+    return null;
+  }
   try {
     const mod = await import(/* webpackIgnore: true */ url);
     encoderCache[key] = mod.default;
@@ -323,6 +328,13 @@ async function loadEncoder(key, url){
 const getJpegEncoder = () => loadEncoder('jpeg', 'https://esm.sh/@jsquash/jpeg/encode');
 const getWebpEncoder = () => loadEncoder('webp', 'https://esm.sh/@jsquash/webp/encode');
 const getOxipng = () => loadEncoder('oxipng', 'https://esm.sh/@jsquash/oxipng/optimise');
+
+// Fire these off immediately on page load so the WASM modules are already
+// fetched/compiled by the time the user hits "Optimise all" — otherwise
+// that cost lands as a stall on the first click.
+getJpegEncoder();
+getWebpEncoder();
+getOxipng();
 
 async function encodeJpegAdvanced(imageData, quality, progressive, chroma){
   const encode = await getJpegEncoder();
@@ -390,9 +402,8 @@ function handleFiles(fileList){
   const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
   files.forEach(file => {
     const id = idCounter++;
-    const origUrl = URL.createObjectURL(file);
     state.items.push({
-      id, file, origUrl, origSize: file.size,
+      id, file, origSize: file.size,
       outBlob: null, outSize: 0, outName: file.name, status: 'pending'
     });
   });
@@ -410,10 +421,6 @@ function render(){
   state.items.forEach(item => {
     const row = document.createElement('div');
     row.className = 'row';
-
-    const img = document.createElement('img');
-    img.className = 'thumb';
-    img.src = item.origUrl;
 
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -465,7 +472,6 @@ function render(){
       dlWrap.appendChild(spacer);
     }
 
-    row.appendChild(img);
     row.appendChild(meta);
     row.appendChild(bar);
     row.appendChild(dlWrap);
@@ -520,7 +526,7 @@ async function processItem(item){
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if(targetFormat === 'image/jpeg'){
       // flatten transparency onto white for JPEG
       ctx.fillStyle = '#ffffff';
@@ -568,13 +574,27 @@ async function processItem(item){
 
 const statusLine = document.getElementById('statusLine');
 
+// Run items with a bounded number in flight at once. Fully sequential
+// processing leaves the CPU/GPU idle while waiting on each image's
+// decode/encode round trip; unbounded parallel can spike memory on large
+// batches. A small pool gets most of the speedup safely.
+async function runWithConcurrency(items, worker, limit){
+  let next = 0;
+  const runners = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while(next < items.length){
+      const item = items[next++];
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
+}
+
 processBtn.addEventListener('click', async () => {
   processBtn.disabled = true;
   statusLine.textContent = 'Optimising… first run may take a few seconds while advanced encoders load.';
   statusLine.classList.remove('warn');
-  for(const item of state.items){
-    await processItem(item);
-  }
+  const concurrency = Math.min(4, navigator.hardwareConcurrency || 4);
+  await runWithConcurrency(state.items, processItem, concurrency);
   processBtn.disabled = false;
 
   const usedAdvanced = state.items.some(i => i.engine === 'advanced');
@@ -584,7 +604,9 @@ processBtn.addEventListener('click', async () => {
   } else if(usedAdvanced && usedFallback){
     statusLine.textContent = 'Done — advanced encoders used where supported, standard encoder used for the rest.';
   } else if(usedFallback){
-    statusLine.textContent = 'Done — advanced encoders were unavailable (likely offline), used the built-in encoder instead. Results are still optimised, just without progressive/chroma controls.';
+    statusLine.textContent = isFileProtocol
+      ? 'Done — advanced encoders need this page served over http(s), so the built-in encoder was used instead. Results are still optimised, just without progressive/chroma controls.'
+      : 'Done — advanced encoders were unavailable (likely offline), used the built-in encoder instead. Results are still optimised, just without progressive/chroma controls.';
     statusLine.classList.add('warn');
   } else {
     statusLine.textContent = '';
@@ -592,7 +614,6 @@ processBtn.addEventListener('click', async () => {
 });
 
 clearBtn.addEventListener('click', () => {
-  state.items.forEach(i => URL.revokeObjectURL(i.origUrl));
   state.items = [];
   fileInput.value = '';
   statusLine.textContent = '';
