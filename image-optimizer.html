@@ -110,7 +110,14 @@
   }
   .dropzone strong{color:var(--text);font-weight:600;}
   .dropzone .hint{font-family:var(--mono);font-size:12px;margin-top:6px;color:var(--text-dim);}
-  #fileInput{display:none;}
+  #fileInput, #folderInput{display:none;}
+  .dropzone .choices{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-top:16px;
+  }
+  .dropzone .choices button{position:relative;z-index:1;}
 
   .toolbar{
     display:flex;
@@ -205,6 +212,117 @@
   }
   .status-line.warn{color:var(--warn);}
 
+  .overall-progress{
+    display:none;
+    margin-bottom:20px;
+  }
+  .overall-progress.show{display:block;}
+  .overall-progress .row-label{
+    display:flex;
+    justify-content:space-between;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-dim);
+    margin-bottom:8px;
+  }
+  .overall-progress .row-label b{color:var(--text);}
+  .overall-progress .track{
+    width:100%;
+    height:8px;
+    border-radius:4px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .overall-progress .track .fill{
+    height:100%;
+    background:var(--accent);
+    width:0%;
+    transition:width .15s linear;
+  }
+
+  .summary{
+    display:none;
+    background:var(--panel);
+    border:1px solid var(--accent-dim);
+    border-radius:10px;
+    padding:14px 20px;
+    margin-bottom:20px;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .summary.show{display:flex;}
+  .summary .big{
+    font-family:var(--mono);
+    font-size:20px;
+    color:var(--accent);
+    font-weight:700;
+  }
+  .summary .detail{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .summary .detail b{color:var(--text);}
+
+  .badge.kept{color:var(--text-dim);border-color:var(--line);}
+  .badge.skipped{color:var(--text-dim);border-color:var(--line);}
+
+  .preview-wrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 20px;
+    margin-bottom:20px;
+    display:none;
+  }
+  .preview-wrap.show{display:block;}
+  .preview-wrap .preview-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:14px;
+  }
+  .preview-wrap .preview-head select{max-width:260px;}
+  .preview-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+  }
+  .preview-col{text-align:center;}
+  .preview-col img{
+    max-width:100%;
+    max-height:280px;
+    border-radius:6px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    object-fit:contain;
+  }
+  .preview-col .label{
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--text-dim);
+    margin-top:8px;
+  }
+  .preview-col .size{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text);
+    margin-top:2px;
+  }
+  .preview-col .size .saved{color:var(--accent);}
+  .preview-loading{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-dim);
+    text-align:center;
+    padding:20px;
+  }
+
   footer{
     margin-top:32px;
     font-family:var(--mono);
@@ -220,7 +338,7 @@
   <header>
     <div class="eyebrow">Images never leave this tab</div>
     <h1>Squeeze</h1>
-    <p>Drop in images, set a max width and quality, get back optimised files. Processing happens locally in this browser tab. On first use it fetches better compression engines (mozjpeg / webp / oxipng) from a CDN — this needs the page to be served over http(s) (not opened as a local file) and an internet connection once; it falls back to a built-in encoder automatically otherwise.</p>
+    <p>Drop in images, set a max width and quality, get back optimised files. Processing happens locally in this browser tab. On first use it fetches better compression engines (mozjpeg / webp / oxipng) from a CDN — needs internet once, then falls back to a built-in encoder automatically if that's ever unavailable.</p>
   </header>
 
   <div class="controls">
@@ -243,6 +361,11 @@
         <option value="image/png">Force PNG</option>
       </select>
       <div class="field-note">PNG ignores quality (lossless)</div>
+    </div>
+    <div class="field">
+      <label>Skip below <span class="val" id="skipVal">200KB</span></label>
+      <input type="range" id="skipThreshold" min="0" max="2000" step="10" value="200">
+      <div class="field-note">Files already this small are left as-is</div>
     </div>
   </div>
 
@@ -273,13 +396,37 @@
       </select>
       <div class="field-note">Only when deep optimisation is on</div>
     </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button type="button" id="previewBtn" disabled>Preview quality…</button>
+      <div class="field-note">Check one image before running the batch</div>
+    </div>
   </div>
   <div class="status-line" id="statusLine"></div>
 
+  <div class="preview-wrap" id="previewWrap">
+    <div class="preview-head">
+      <select id="previewPicker"></select>
+      <button type="button" class="ghost" id="previewClose">Close preview</button>
+    </div>
+    <div id="previewBody"></div>
+  </div>
+
+  <div class="summary" id="summary">
+    <div class="detail">Batch total: <b id="summaryBytes"></b></div>
+    <div class="big" id="summaryPct"></div>
+    <div class="detail" id="summaryNote"></div>
+  </div>
+
   <div class="dropzone" id="dropzone">
-    <div><strong>Drop images here</strong> or click to choose files</div>
-    <div class="hint">JPEG · PNG · WebP · GIF (first frame) — any number of files</div>
+    <div><strong>Drop images or a folder here</strong></div>
+    <div class="hint">JPEG · PNG · WebP · GIF (first frame) — subfolders are included automatically</div>
+    <div class="choices">
+      <button type="button" id="pickFilesBtn">Choose files…</button>
+      <button type="button" class="primary" id="pickFolderBtn">Choose folder…</button>
+    </div>
     <input type="file" id="fileInput" multiple accept="image/*">
+    <input type="file" id="folderInput" webkitdirectory multiple>
   </div>
 
   <div class="toolbar">
@@ -291,30 +438,29 @@
     </div>
   </div>
 
+  <div class="overall-progress" id="overallProgress">
+    <div class="row-label">
+      <span>Optimising <b id="overallCount">0 / 0</b></span>
+      <span id="overallPct">0%</span>
+    </div>
+    <div class="track"><div class="fill" id="overallFill"></div></div>
+  </div>
+
   <div class="list" id="list"></div>
 
   <footer>Nothing leaves your browser tab. Reprocessing re-reads the original file, so you can change settings and run again.</footer>
 </div>
 
 <script>
-const state = { items: [] }; // {id, file, origSize, outBlob, outSize, outName, w, h, status, engine}
+const state = { items: [] }; // {id, file, origUrl, origSize, outBlob, outSize, outName, w, h, status, engine}
 let idCounter = 0;
 
 // --- Advanced encoder loading (mozjpeg / webp / oxipng via WASM) ---
 // Each loader is memoised and independently allowed to fail; failure just
 // means that format silently falls back to the native canvas encoder.
 const encoderCache = {};
-const isFileProtocol = location.protocol === 'file:';
 async function loadEncoder(key, url){
   if(encoderCache[key] !== undefined) return encoderCache[key];
-  if(isFileProtocol){
-    // Browsers block cross-origin fetches from file:// pages outright (the
-    // page's origin is "null"), regardless of the CDN's CORS headers, so
-    // there's no point trying — it will only produce a console error.
-    console.info(`Advanced encoder (${key}) skipped: page opened via file://, so it can't reach the CDN. Serve this file over http(s) to enable it.`);
-    encoderCache[key] = null;
-    return null;
-  }
   try {
     const mod = await import(/* webpackIgnore: true */ url);
     encoderCache[key] = mod.default;
@@ -328,13 +474,6 @@ async function loadEncoder(key, url){
 const getJpegEncoder = () => loadEncoder('jpeg', 'https://esm.sh/@jsquash/jpeg/encode');
 const getWebpEncoder = () => loadEncoder('webp', 'https://esm.sh/@jsquash/webp/encode');
 const getOxipng = () => loadEncoder('oxipng', 'https://esm.sh/@jsquash/oxipng/optimise');
-
-// Fire these off immediately on page load so the WASM modules are already
-// fetched/compiled by the time the user hits "Optimise all" — otherwise
-// that cost lands as a stall on the first click.
-getJpegEncoder();
-getWebpEncoder();
-getOxipng();
 
 async function encodeJpegAdvanced(imageData, quality, progressive, chroma){
   const encode = await getJpegEncoder();
@@ -374,6 +513,9 @@ async function optimisePngAdvanced(pngBlob, level){
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
+const folderInput = document.getElementById('folderInput');
+const pickFilesBtn = document.getElementById('pickFilesBtn');
+const pickFolderBtn = document.getElementById('pickFolderBtn');
 const list = document.getElementById('list');
 const countEl = document.getElementById('count');
 const processBtn = document.getElementById('processBtn');
@@ -384,30 +526,122 @@ const qualityInput = document.getElementById('quality');
 const widthVal = document.getElementById('widthVal');
 const qualVal = document.getElementById('qualVal');
 const formatSelect = document.getElementById('format');
+const skipThresholdInput = document.getElementById('skipThreshold');
+const skipVal = document.getElementById('skipVal');
+const progressiveInput = document.getElementById('progressive');
+const chromaSelect = document.getElementById('chroma');
+const deepPngInput = document.getElementById('deepPng');
+const pngLevelSelect = document.getElementById('pngLevel');
+const previewBtn = document.getElementById('previewBtn');
+const previewWrap = document.getElementById('previewWrap');
+const previewPicker = document.getElementById('previewPicker');
+const previewBody = document.getElementById('previewBody');
+const previewClose = document.getElementById('previewClose');
+const summaryEl = document.getElementById('summary');
+const summaryBytes = document.getElementById('summaryBytes');
+const summaryPct = document.getElementById('summaryPct');
+const summaryNote = document.getElementById('summaryNote');
 
 maxWidthInput.addEventListener('input', () => widthVal.textContent = maxWidthInput.value + 'px');
 qualityInput.addEventListener('input', () => qualVal.textContent = qualityInput.value + '%');
+skipThresholdInput.addEventListener('input', () => skipVal.textContent = skipThresholdInput.value + 'KB');
 
-dropzone.addEventListener('click', () => fileInput.click());
+// --- Settings persistence (localStorage) ---
+const SETTINGS_KEY = 'squeeze-settings-v1';
+const settingFields = [
+  { el: maxWidthInput, type: 'value' },
+  { el: qualityInput, type: 'value' },
+  { el: formatSelect, type: 'value' },
+  { el: skipThresholdInput, type: 'value' },
+  { el: progressiveInput, type: 'checked' },
+  { el: chromaSelect, type: 'value' },
+  { el: deepPngInput, type: 'checked' },
+  { el: pngLevelSelect, type: 'value' },
+];
+
+function loadSettings(){
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
+  catch(e){ saved = {}; }
+  settingFields.forEach(({ el, type }) => {
+    if(!(el.id in saved)) return;
+    if(type === 'checked') el.checked = saved[el.id];
+    else el.value = saved[el.id];
+  });
+  widthVal.textContent = maxWidthInput.value + 'px';
+  qualVal.textContent = qualityInput.value + '%';
+  skipVal.textContent = skipThresholdInput.value + 'KB';
+}
+
+function saveSettings(){
+  const out = {};
+  settingFields.forEach(({ el, type }) => {
+    out[el.id] = type === 'checked' ? el.checked : el.value;
+  });
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(out)); } catch(e){ /* ignore */ }
+}
+
+settingFields.forEach(({ el }) => el.addEventListener('change', saveSettings));
+loadSettings();
+
+pickFilesBtn.addEventListener('click', () => fileInput.click());
+pickFolderBtn.addEventListener('click', () => folderInput.click());
+
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
-dropzone.addEventListener('drop', e => {
+dropzone.addEventListener('drop', async e => {
   e.preventDefault();
   dropzone.classList.remove('drag');
-  handleFiles(e.dataTransfer.files);
+  const items = e.dataTransfer.items;
+  if(items && items.length && items[0].webkitGetAsEntry){
+    // Drag-and-drop of folders: walk the entry tree to collect files.
+    const entries = Array.from(items).map(it => it.webkitGetAsEntry()).filter(Boolean);
+    const files = await collectFilesFromEntries(entries);
+    handleFiles(files);
+  } else {
+    handleFiles(e.dataTransfer.files);
+  }
 });
-fileInput.addEventListener('change', e => handleFiles(e.target.files));
+fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+folderInput.addEventListener('change', e => { handleFiles(e.target.files); folderInput.value = ''; });
+
+function readEntryFile(entry){
+  return new Promise((resolve, reject) => entry.file(resolve, reject));
+}
+function readDirEntries(reader){
+  return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+}
+async function collectFilesFromEntries(entries){
+  const files = [];
+  async function walk(entry){
+    if(entry.isFile){
+      try { files.push(await readEntryFile(entry)); } catch(e){ /* skip unreadable */ }
+    } else if(entry.isDirectory){
+      const reader = entry.createReader();
+      let batch;
+      // readEntries must be called repeatedly until it returns an empty array
+      do {
+        batch = await readDirEntries(reader);
+        for(const child of batch){ await walk(child); }
+      } while(batch.length > 0);
+    }
+  }
+  for(const entry of entries){ await walk(entry); }
+  return files;
+}
 
 function handleFiles(fileList){
   const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
   files.forEach(file => {
     const id = idCounter++;
+    const origUrl = URL.createObjectURL(file);
     state.items.push({
-      id, file, origSize: file.size,
+      id, file, origUrl, origSize: file.size,
       outBlob: null, outSize: 0, outName: file.name, status: 'pending'
     });
   });
   render();
+  refreshPreviewPicker();
 }
 
 function fmtBytes(b){
@@ -429,7 +663,11 @@ function render(){
     name.textContent = item.outName;
     const sizes = document.createElement('div');
     sizes.className = 'sizes';
-    if(item.status === 'done'){
+    if(item.status === 'done' && item.engine === 'skipped'){
+      sizes.innerHTML = `${fmtBytes(item.origSize)} <span class="pending">· already small, left as-is</span>`;
+    } else if(item.status === 'done' && item.engine === 'kept'){
+      sizes.innerHTML = `${fmtBytes(item.origSize)} <span class="pending">· optimised version was bigger, kept original</span>`;
+    } else if(item.status === 'done'){
       const pct = Math.round((1 - item.outSize/item.origSize) * 100);
       sizes.innerHTML = `${fmtBytes(item.origSize)} → ${fmtBytes(item.outSize)} <span class="saved">(${pct >= 0 ? '-' : '+'}${Math.abs(pct)}%)</span>`;
     } else if(item.status === 'error'){
@@ -460,9 +698,11 @@ function render(){
       };
       dlWrap.appendChild(dlBtn);
       if(item.engine){
+        const badgeClass = { advanced: 'advanced', standard: 'standard', skipped: 'skipped', kept: 'kept' }[item.engine] || 'standard';
+        const badgeText = { advanced: 'Advanced', standard: 'Standard', skipped: 'Skipped', kept: 'Kept original' }[item.engine] || item.engine;
         const badge = document.createElement('div');
-        badge.className = 'badge ' + (item.engine === 'advanced' ? 'advanced' : 'standard');
-        badge.textContent = item.engine === 'advanced' ? 'Advanced' : 'Standard';
+        badge.className = 'badge ' + badgeClass;
+        badge.textContent = badgeText;
         dlWrap.appendChild(badge);
       }
     } else {
@@ -481,6 +721,7 @@ function render(){
   countEl.textContent = state.items.length ? `${state.items.length} image${state.items.length>1?'s':''}` : '';
   processBtn.disabled = state.items.length === 0;
   clearBtn.disabled = state.items.length === 0;
+  previewBtn.disabled = state.items.length === 0;
   zipBtn.disabled = !state.items.some(i => i.status === 'done');
 }
 
@@ -496,74 +737,115 @@ function baseName(name){
   return dot > 0 ? name.slice(0, dot) : name;
 }
 
+function currentSettings(){
+  return {
+    maxWidth: parseInt(maxWidthInput.value, 10),
+    qualityPct: parseInt(qualityInput.value, 10),
+    format: formatSelect.value,
+    skipThresholdBytes: parseInt(skipThresholdInput.value, 10) * 1024,
+    progressive: progressiveInput.checked,
+    chroma: chromaSelect.value,
+    deepPng: deepPngInput.checked,
+    pngLevel: parseInt(pngLevelSelect.value, 10),
+  };
+}
+
+// Core encode pipeline, shared by batch processing and the preview panel.
+// Returns { blob, engine, targetFormat, width, height } or null on failure.
+async function encodeImage(file, settings){
+  const bitmap = await createImageBitmap(file);
+  const quality01 = settings.qualityPct / 100;
+
+  let targetFormat = settings.format;
+  if(targetFormat === 'auto'){
+    targetFormat = (file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/gif')
+      ? file.type : 'image/jpeg';
+    if(targetFormat === 'image/gif') targetFormat = 'image/png';
+  }
+
+  // Never upscale: only shrink when the image is wider than the cap.
+  let { width, height } = bitmap;
+  if(width > settings.maxWidth){
+    height = Math.round(height * (settings.maxWidth / width));
+    width = settings.maxWidth;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if(targetFormat === 'image/jpeg'){
+    // flatten transparency onto white for JPEG
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+  }
+  ctx.drawImage(bitmap, 0, 0, width, height);
+
+  let blob = null;
+  let engine = 'standard';
+
+  if(targetFormat === 'image/jpeg'){
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const advanced = await encodeJpegAdvanced(imageData, settings.qualityPct, settings.progressive, settings.chroma).catch(() => null);
+    if(advanced){ blob = advanced; engine = 'advanced'; }
+  } else if(targetFormat === 'image/webp'){
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const advanced = await encodeWebpAdvanced(imageData, settings.qualityPct).catch(() => null);
+    if(advanced){ blob = advanced; engine = 'advanced'; }
+  }
+
+  if(!blob){
+    // native canvas fallback for jpeg/webp, or default path for png
+    blob = await new Promise(res => canvas.toBlob(res, targetFormat, targetFormat === 'image/png' ? undefined : quality01));
+  }
+
+  if(targetFormat === 'image/png' && settings.deepPng){
+    const optimised = await optimisePngAdvanced(blob, settings.pngLevel).catch(() => null);
+    if(optimised){ blob = optimised; engine = 'advanced'; }
+  }
+
+  return { blob, engine, targetFormat, width, height };
+}
+
+function outNameFor(file, targetFormat){
+  const newExt = extForType(targetFormat);
+  const origExt = (file.name.split('.').pop() || '').toLowerCase();
+  const extChanged = !(origExt === newExt || (origExt === 'jpeg' && newExt === 'jpg'));
+  return extChanged ? baseName(file.name) + '.' + newExt : file.name;
+}
+
 async function processItem(item){
   item.status = 'processing';
   render();
 
+  const settings = currentSettings();
+
+  // Already small enough — leave it exactly as it is.
+  if(item.origSize <= settings.skipThresholdBytes){
+    item.outBlob = item.file;
+    item.outSize = item.origSize;
+    item.outName = item.file.name;
+    item.engine = 'skipped';
+    item.status = 'done';
+    render();
+    return;
+  }
+
   try {
-    const bitmap = await createImageBitmap(item.file);
-    const maxWidth = parseInt(maxWidthInput.value, 10);
-    const qualityPct = parseInt(qualityInput.value, 10);
-    const quality01 = qualityPct / 100;
-    const progressive = document.getElementById('progressive').checked;
-    const chroma = document.getElementById('chroma').value;
-    const deepPng = document.getElementById('deepPng').checked;
-    const pngLevel = parseInt(document.getElementById('pngLevel').value, 10);
+    const result = await encodeImage(item.file, settings);
 
-    let targetFormat = formatSelect.value;
-    if(targetFormat === 'auto'){
-      targetFormat = (item.file.type === 'image/png' || item.file.type === 'image/webp' || item.file.type === 'image/gif')
-        ? item.file.type : 'image/jpeg';
-      if(targetFormat === 'image/gif') targetFormat = 'image/png';
+    // If the "optimised" version is actually bigger, keep the original instead.
+    if(result.blob.size >= item.origSize){
+      item.outBlob = item.file;
+      item.outSize = item.origSize;
+      item.outName = item.file.name;
+      item.engine = 'kept';
+    } else {
+      item.outBlob = result.blob;
+      item.outSize = result.blob.size;
+      item.outName = outNameFor(item.file, result.targetFormat);
+      item.engine = result.engine;
     }
-
-    let { width, height } = bitmap;
-    if(width > maxWidth){
-      height = Math.round(height * (maxWidth / width));
-      width = maxWidth;
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if(targetFormat === 'image/jpeg'){
-      // flatten transparency onto white for JPEG
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-    }
-    ctx.drawImage(bitmap, 0, 0, width, height);
-
-    let blob = null;
-    let engine = 'standard';
-
-    if(targetFormat === 'image/jpeg'){
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const advanced = await encodeJpegAdvanced(imageData, qualityPct, progressive, chroma).catch(() => null);
-      if(advanced){ blob = advanced; engine = 'advanced'; }
-    } else if(targetFormat === 'image/webp'){
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const advanced = await encodeWebpAdvanced(imageData, qualityPct).catch(() => null);
-      if(advanced){ blob = advanced; engine = 'advanced'; }
-    }
-
-    if(!blob){
-      // native canvas fallback for jpeg/webp, or default path for png
-      blob = await new Promise(res => canvas.toBlob(res, targetFormat, targetFormat === 'image/png' ? undefined : quality01));
-    }
-
-    if(targetFormat === 'image/png' && deepPng){
-      const optimised = await optimisePngAdvanced(blob, pngLevel).catch(() => null);
-      if(optimised){ blob = optimised; engine = 'advanced'; }
-    }
-
-    item.outBlob = blob;
-    item.outSize = blob.size;
-    const newExt = extForType(targetFormat);
-    const origExt = (item.file.name.split('.').pop() || '').toLowerCase();
-    const extChanged = !(origExt === newExt || (origExt === 'jpeg' && newExt === 'jpg'));
-    item.outName = extChanged ? baseName(item.file.name) + '.' + newExt : item.file.name;
-    item.engine = engine;
     item.status = 'done';
   } catch(err){
     console.error(err);
@@ -573,28 +855,33 @@ async function processItem(item){
 }
 
 const statusLine = document.getElementById('statusLine');
+const overallProgress = document.getElementById('overallProgress');
+const overallCount = document.getElementById('overallCount');
+const overallPct = document.getElementById('overallPct');
+const overallFill = document.getElementById('overallFill');
 
-// Run items with a bounded number in flight at once. Fully sequential
-// processing leaves the CPU/GPU idle while waiting on each image's
-// decode/encode round trip; unbounded parallel can spike memory on large
-// batches. A small pool gets most of the speedup safely.
-async function runWithConcurrency(items, worker, limit){
-  let next = 0;
-  const runners = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
-    while(next < items.length){
-      const item = items[next++];
-      await worker(item);
-    }
-  });
-  await Promise.all(runners);
+function updateOverallProgress(done, total){
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  overallCount.textContent = `${done} / ${total}`;
+  overallPct.textContent = `${pct}%`;
+  overallFill.style.width = pct + '%';
 }
 
 processBtn.addEventListener('click', async () => {
   processBtn.disabled = true;
   statusLine.textContent = 'Optimising… first run may take a few seconds while advanced encoders load.';
   statusLine.classList.remove('warn');
-  const concurrency = Math.min(4, navigator.hardwareConcurrency || 4);
-  await runWithConcurrency(state.items, processItem, concurrency);
+
+  const total = state.items.length;
+  overallProgress.classList.add('show');
+  updateOverallProgress(0, total);
+
+  let done = 0;
+  for(const item of state.items){
+    await processItem(item);
+    done++;
+    updateOverallProgress(done, total);
+  }
   processBtn.disabled = false;
 
   const usedAdvanced = state.items.some(i => i.engine === 'advanced');
@@ -604,21 +891,134 @@ processBtn.addEventListener('click', async () => {
   } else if(usedAdvanced && usedFallback){
     statusLine.textContent = 'Done — advanced encoders used where supported, standard encoder used for the rest.';
   } else if(usedFallback){
-    statusLine.textContent = isFileProtocol
-      ? 'Done — advanced encoders need this page served over http(s), so the built-in encoder was used instead. Results are still optimised, just without progressive/chroma controls.'
-      : 'Done — advanced encoders were unavailable (likely offline), used the built-in encoder instead. Results are still optimised, just without progressive/chroma controls.';
+    statusLine.textContent = 'Done — advanced encoders were unavailable (likely offline), used the built-in encoder instead. Results are still optimised, just without progressive/chroma controls.';
     statusLine.classList.add('warn');
   } else {
     statusLine.textContent = '';
   }
+
+  renderSummary();
 });
 
+function renderSummary(){
+  const done = state.items.filter(i => i.status === 'done');
+  if(done.length === 0){ summaryEl.classList.remove('show'); return; }
+
+  const totalOrig = done.reduce((sum, i) => sum + i.origSize, 0);
+  const totalOut = done.reduce((sum, i) => sum + i.outSize, 0);
+  const pct = totalOrig > 0 ? Math.round((1 - totalOut / totalOrig) * 100) : 0;
+  const skipped = done.filter(i => i.engine === 'skipped').length;
+  const kept = done.filter(i => i.engine === 'kept').length;
+
+  summaryBytes.textContent = `${fmtBytes(totalOrig)} → ${fmtBytes(totalOut)}`;
+  summaryPct.textContent = `${pct >= 0 ? '-' : '+'}${Math.abs(pct)}%`;
+  const notes = [];
+  if(skipped) notes.push(`${skipped} already small enough`);
+  if(kept) notes.push(`${kept} kept original (would've grown)`);
+  summaryNote.textContent = notes.join(' · ');
+  summaryEl.classList.add('show');
+}
+
 clearBtn.addEventListener('click', () => {
+  state.items.forEach(i => URL.revokeObjectURL(i.origUrl));
   state.items = [];
   fileInput.value = '';
   statusLine.textContent = '';
+  summaryEl.classList.remove('show');
+  overallProgress.classList.remove('show');
+  closePreview();
   render();
+  refreshPreviewPicker();
 });
+
+// --- Quality preview: run the encode pipeline on one chosen image without
+// touching the main batch, so settings can be sanity-checked before "Optimise all". ---
+function refreshPreviewPicker(){
+  const prev = previewPicker.value;
+  previewPicker.innerHTML = '';
+  state.items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.file.name;
+    previewPicker.appendChild(opt);
+  });
+  if(prev && state.items.some(i => String(i.id) === prev)) previewPicker.value = prev;
+}
+
+function closePreview(){
+  previewWrap.classList.remove('show');
+  previewBody.innerHTML = '';
+}
+
+previewClose.addEventListener('click', closePreview);
+
+previewBtn.addEventListener('click', async () => {
+  if(state.items.length === 0) return;
+  refreshPreviewPicker();
+  previewWrap.classList.add('show');
+  await runPreview();
+});
+
+previewPicker.addEventListener('change', runPreview);
+[maxWidthInput, qualityInput, formatSelect, progressiveInput, chromaSelect, deepPngInput, pngLevelSelect].forEach(el => {
+  el.addEventListener('change', () => { if(previewWrap.classList.contains('show')) runPreview(); });
+});
+
+async function runPreview(){
+  const id = parseInt(previewPicker.value, 10);
+  const item = state.items.find(i => i.id === id) || state.items[0];
+  if(!item) return;
+
+  previewBody.innerHTML = '<div class="preview-loading">Rendering preview…</div>';
+
+  try {
+    const settings = currentSettings();
+    let resultBlob, resultLabel, engine;
+
+    if(item.origSize <= settings.skipThresholdBytes){
+      resultBlob = item.file;
+      resultLabel = 'already small enough — left as-is';
+      engine = 'skipped';
+    } else {
+      const result = await encodeImage(item.file, settings);
+      if(result.blob.size >= item.origSize){
+        resultBlob = item.file;
+        resultLabel = 'optimised version was bigger — original kept';
+        engine = 'kept';
+      } else {
+        resultBlob = result.blob;
+        engine = result.engine;
+      }
+    }
+
+    const origUrl = item.origUrl;
+    const outUrl = URL.createObjectURL(resultBlob);
+    const pct = Math.round((1 - resultBlob.size / item.origSize) * 100);
+    const savedHtml = engine === 'skipped' || engine === 'kept'
+      ? ''
+      : ` <span class="saved">(${pct >= 0 ? '-' : '+'}${Math.abs(pct)}%)</span>`;
+    const engineBadge = engine === 'advanced' ? ' · advanced encoder' : (engine === 'standard' ? ' · standard encoder' : '');
+
+    previewBody.innerHTML = `
+      <div class="preview-grid">
+        <div class="preview-col">
+          <img src="${origUrl}">
+          <div class="label">Original</div>
+          <div class="size">${fmtBytes(item.origSize)}</div>
+        </div>
+        <div class="preview-col">
+          <img src="${outUrl}">
+          <div class="label">At current settings</div>
+          <div class="size">${fmtBytes(resultBlob.size)}${savedHtml}</div>
+        </div>
+      </div>
+      <div class="field-note" style="text-align:center;margin-top:12px;">${resultLabel || ''}${engineBadge}</div>
+    `;
+  } catch(err){
+    console.error(err);
+    previewBody.innerHTML = '<div class="preview-loading">Could not render a preview for this file.</div>';
+  }
+}
 
 zipBtn.addEventListener('click', async () => {
   const zip = new JSZip();
